@@ -44,7 +44,7 @@ def test(opt):
         predictions = model(next_states)[:, 0]
         index = torch.argmax(predictions).item()
         action = next_actions[index]
-        _, done = env.step(action, render=True, video=out)
+        _, done = env.step(action, epoch=1, render=True, video=out)
 
         if done:
             out.release()

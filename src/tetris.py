@@ -94,7 +94,7 @@ class Tetris:
         return states
 
     # 行動を実行、行動から報酬(スコア)を求めて描画
-    def step(self, action, render=True, video=None):
+    def step(self, action, epoch, render=True, video=None):
         x, num_rotations = action  #初期位置x座標、回転数
         self.current_pos = {"x": x, "y": 0}  #初期座標
         for _ in range(num_rotations):
@@ -103,7 +103,8 @@ class Tetris:
         while not self.check_collision(self.piece, self.current_pos):  #ピースを下まで落下させる
             self.current_pos["y"] += 1
             if render:
-                self.render(video)
+                if epoch%500 == 1:  #ビデオ再生
+                    self.render(video)
 
         overflow = self.truncate(self.piece, self.current_pos)  #ピースがボードから溢れるかどうか
         if overflow:  #溢れた場合gameover=true
@@ -116,12 +117,15 @@ class Tetris:
         self.score += score
         self.tetrominoes += 1
         self.cleared_lines += lines_cleared
-        if not self.gameover:  #ゲームオーバーになるまで新しいピースを出し続ける
+        if not self.gameover or not self.tetrominoes==100:  #溢れるか100手になるまで新しいピースを出し続ける
             self.new_piece()
-        if self.gameover:
-            self.score -= 2
+        elif self.gameover:
+            self.score -= 5
+        elif self.tetrominoes==100:
+            self.score += 5
 
-        return score, self.gameover
+        done = self.gameover or self.tetrominoes==100  #溢れるか100手になったら終了(done=True)
+        return score, done
 
     # 現在のboardを取得し，posに配置したピースをboardにおき，足し合わせた後のboardを返す
     # 返り値はboard上の位置posにpieceを配置したboard

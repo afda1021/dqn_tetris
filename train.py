@@ -28,7 +28,7 @@ def get_args():
     parser.add_argument("--num_decay_epochs", type=float, default=2000)
     parser.add_argument("--num_epochs", type=int, default=3000)  # エポック数
     parser.add_argument("--save_interval", type=int, default=1000)
-    parser.add_argument("--replay_memory_size", type=int, default=30000,
+    parser.add_argument("--replay_memory_size", type=int, default=30000, # 最大記録数30000
                         help="Number of epoches between testing phases")
     parser.add_argument("--log_path", type=str, default="tensorboard")
     parser.add_argument("--saved_path", type=str, default="trained_models")
@@ -85,13 +85,13 @@ def train(opt):
         next_state = next_states[index, :]  #ある行動を選択したときの次の状態 #tensor([ , , , ])
         action = next_actions[index]  #行動 #(左から何番目か,何回転か)
 
-        reward, done = env.step(action, render=True) #行動を実行、報酬(スコア)を求める、溢れた場合done=True、描画
+        reward, done = env.step(action, epoch, render=True) #行動を実行、報酬(スコア)を求める、溢れた場合done=True、描画
 
         if torch.cuda.is_available():
             next_state = next_state.cuda()
         replay_memory.append([state, reward, next_state, done]) #deque([[tensor([0., 0., 0., 0.]), 1, tensor([0., 0., 2., 4.]), False]],..., maxlen=30000)
 
-        if done:  # 溢れた場合
+        if done:  # 溢れた場合 or 上限100手
             final_score = env.score
             final_tetrominoes = env.tetrominoes
             final_cleared_lines = env.cleared_lines
@@ -107,7 +107,7 @@ def train(opt):
         # 累計ピースが3000に到達した後、溢れる毎に以下を実行
         epoch += 1
         batch = sample(replay_memory, min(len(replay_memory), opt.batch_size)) #replay_memoryからbatch_size個ランダムに取り出す(len(replay_memory) < opt.batch_sizeのときはlen(replay_memory)個取り出す)
-        print('num',len(replay_memory))
+        
         state_batch, reward_batch, next_state_batch, done_batch = zip(*batch)
         state_batch = torch.stack(tuple(state for state in state_batch))  #tensor([[0., 26., 16., 62.],*batch_size個])
         reward_batch = torch.from_numpy(np.array(reward_batch, dtype=np.float32)[:, None])  #tensor([[1.],*batch_size個])
@@ -133,13 +133,14 @@ def train(opt):
         loss.backward()
         optimizer.step()
 
-        print("Epoch: {}/{}, Action: {}, Score: {}, Tetrominoes {}, Cleared lines: {}".format(
-            epoch,
-            opt.num_epochs,
-            action,
-            final_score,
-            final_tetrominoes,
-            final_cleared_lines))
+        if epoch%10 == 0:
+            print("Epoch: {}/{}, Action: {}, Score: {}, Tetrominoes {}, Cleared lines: {}".format(
+                epoch,
+                opt.num_epochs,
+                action,
+                final_score,
+                final_tetrominoes,
+                final_cleared_lines))
         writer.add_scalar('Train/Score', final_score, epoch - 1)
         writer.add_scalar('Train/Tetrominoes', final_tetrominoes, epoch - 1)
         writer.add_scalar('Train/Cleared lines', final_cleared_lines, epoch - 1)
