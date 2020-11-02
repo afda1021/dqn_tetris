@@ -57,6 +57,10 @@ class Tetris:
         self.score = 0
         self.tetrominoes = 0
         self.cleared_lines = 0
+        self.cleared_lines1 = 0
+        self.cleared_lines2 = 0
+        self.cleared_lines3 = 0
+        self.cleared_lines4 = 0
         self.bag = list(range(len(self.pieces))) #[0,1,...,6] #len(self.pieces)=7
         random.shuffle(self.bag) # bag=[4,2,3,0,6,5,1]とか
         self.ind = self.bag.pop() # bagの後ろから要素を取り出す (ind=1→5→6...)
@@ -113,10 +117,22 @@ class Tetris:
         self.board = self.store(self.piece, self.current_pos)  #現在のboardのcurrent_pos上にpieceを配置してboardを出力
 
         lines_cleared, self.board = self.check_cleared_rows(self.board)  #揃った行数と、その行を削除した後のboard
+        
+        # 何ライン消しが何回か記録
+        if lines_cleared == 1:
+            self.cleared_lines1 += 1
+        elif lines_cleared == 2:
+            self.cleared_lines2 += 1
+        elif lines_cleared == 3:
+            self.cleared_lines3 += 1
+        elif lines_cleared == 4:
+            self.cleared_lines4 += 1
+        
         score = 1 + (lines_cleared ** 2) * self.width  #スコア
         self.score += score
         self.tetrominoes += 1
         self.cleared_lines += lines_cleared
+
         if not self.gameover or not self.tetrominoes==100:  #溢れるか100手になるまで新しいピースを出し続ける
             self.new_piece()
         elif self.gameover:
