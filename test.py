@@ -26,10 +26,10 @@ def test(opt):
             torch.cuda.manual_seed(123)
         else:
             torch.manual_seed(123)
-        if torch.cuda.is_available():
-            model = torch.load("{}/tetris".format(opt.saved_path))
+        if torch.cuda.is_available():  #trained_modelsのモデルでテスト
+            model = torch.load("{}/tetris2".format(opt.saved_path))
         else:
-            model = torch.load("{}/tetris".format(opt.saved_path), map_location=lambda storage, loc: storage)
+            model = torch.load("{}/tetris2".format(opt.saved_path), map_location=lambda storage, loc: storage)
         model.eval()
         env = Tetris(width=opt.width, height=opt.height, block_size=opt.block_size)
         env.reset()
@@ -69,14 +69,15 @@ def test(opt):
                     cleared_lines2,
                     cleared_lines3,
                     cleared_lines4))
+                #スコアをcsvに記録
                 if i == 0 :
                     with open('Score.csv', mode='w', newline="") as Score_Record:
                         writer = csv.writer(Score_Record)
-                        writer.writerow([final_score,final_tetrominoes,final_cleared_lines, cleared_lines1,cleared_lines2,cleared_lines3,cleared_lines4])
+                        writer.writerow([i,final_tetrominoes,final_score,final_cleared_lines, cleared_lines1,cleared_lines2,cleared_lines3,cleared_lines4])
                 else:
                     with open('Score.csv', mode='a', newline="") as Score_Record:
                         writer = csv.writer(Score_Record)
-                        writer.writerow([final_score,final_tetrominoes,final_cleared_lines, cleared_lines1,cleared_lines2,cleared_lines3,cleared_lines4])
+                        writer.writerow([i,final_tetrominoes,final_score,final_cleared_lines, cleared_lines1,cleared_lines2,cleared_lines3,cleared_lines4])
 
                 break
         

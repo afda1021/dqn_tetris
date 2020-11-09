@@ -133,15 +133,12 @@ class Tetris:
         self.tetrominoes += 1
         self.cleared_lines += lines_cleared
 
-        if not self.gameover or not self.tetrominoes==100:  #溢れるか100手になるまで新しいピースを出し続ける
+        if not self.gameover:  #溢れるか100手になるまで新しいピースを出し続ける
             self.new_piece()
-        elif self.gameover:
-            self.score -= 5
-        elif self.tetrominoes==100:
-            self.score += 5
+        elif self.gameover and self.tetrominoes < 512:
+            self.score -= 2
 
-        done = self.gameover or self.tetrominoes==100  #溢れるか100手になったら終了(done=True)
-        return score, done
+        return score, self.gameover  #溢れるか100手になったら終了
 
     # 現在のboardを取得し，posに配置したピースをboardにおき，足し合わせた後のboardを返す
     # 返り値はboard上の位置posにpieceを配置したboard
@@ -226,10 +223,10 @@ class Tetris:
 
     # 次のピースを選択
     def new_piece(self):
-        if not len(self.bag):
+        if not len(self.bag):  #bagが空になったら新しく生成
             self.bag = list(range(len(self.pieces)))
             random.shuffle(self.bag)
-        self.ind = self.bag.pop()
+        self.ind = self.bag.pop()  # bagの後ろから要素を取り出す
         self.piece = [row[:] for row in self.pieces[self.ind]]
         self.current_pos = {"x": self.width // 2 - len(self.piece[0]) // 2,
                             "y": 0
@@ -246,7 +243,7 @@ class Tetris:
                     return True
         return False
 
-    # ピースがボードから溢れるかどうか、溢れた場合gameover=true
+    # ピースがボードから溢れるかどうか、溢れた場合or512以上→gameover=true
     def truncate(self, piece, pos):
         gameover = False
         last_collision_row = -1
@@ -265,6 +262,8 @@ class Tetris:
                     for x in range(len(piece[y])):
                         if self.board[pos["y"] + y][pos["x"] + x] and piece[y][x] and y > last_collision_row:
                             last_collision_row = y
+        if self.tetrominoes > 511:
+            gameover = True
         return gameover
 
     

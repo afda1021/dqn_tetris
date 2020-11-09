@@ -11,6 +11,7 @@ from tensorboardX import SummaryWriter
 from src.deep_q_network import DeepQNetwork
 from src.tetris import Tetris
 from collections import deque
+import csv
 
 def get_args():
     parser = argparse.ArgumentParser(
@@ -20,15 +21,15 @@ def get_args():
     parser.add_argument("--width", type=int, default=10, help="The common width for all images") #幅 #コマンドライン引数で指定しなければwidth=10
     parser.add_argument("--height", type=int, default=20, help="The common height for all images") #高さ
     parser.add_argument("--block_size", type=int, default=30, help="Size of a block") #1ブロック(ピクセル)のサイズ
-    parser.add_argument("--batch_size", type=int, default=512, help="The number of images per batch")
+    parser.add_argument("--batch_size", type=int, default=512, help="The number of images per batch")  #replay_memoryから抜き取るデータ数
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--initial_epsilon", type=float, default=1)
     parser.add_argument("--final_epsilon", type=float, default=1e-3)
     parser.add_argument("--num_decay_epochs", type=float, default=2000)
-    parser.add_argument("--num_epochs", type=int, default=3000)  # エポック数
+    parser.add_argument("--num_epochs", type=int, default=30000)  # エポック数
     parser.add_argument("--save_interval", type=int, default=1000)
-    parser.add_argument("--replay_memory_size", type=int, default=30000, # 最大記録数30000
+    parser.add_argument("--replay_memory_size", type=int, default=512, # 最大記録数30000
                         help="Number of epoches between testing phases")
     parser.add_argument("--log_path", type=str, default="tensorboard")
     parser.add_argument("--saved_path", type=str, default="trained_models")
@@ -38,6 +39,7 @@ def get_args():
 
 
 def train(opt):
+    #print('decay', opt.num_decay_epochs)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(123)
     else:
@@ -48,7 +50,8 @@ def train(opt):
     writer = SummaryWriter(opt.log_path)
     env = Tetris(width=opt.width, height=opt.height, block_size=opt.block_size) #高さ、幅、1ブロックの大きさを指定
     model = DeepQNetwork()  #インスタンス生成
-    optimizer = torch.optim.Adam(model.parameters(), lr=opt.lr)
+    #optimizer = torch.optim.Adam(model.parameters(), lr=opt.lr)
+    optimizer = torch.optim.SGD(model.parameters(), lr=opt.lr)
     criterion = nn.MSELoss()
 
     state = env.reset()  # 初期状態　tensor([0., 0., 0., 0.])
@@ -62,8 +65,9 @@ def train(opt):
         #1ピース目の取りうる全ての行動に対して、それぞれ状態を計算  {(左から何番目か,何回転か):tensor([,,,]),*n}
         next_steps = env.get_next_states()
         # εグリーディー的なやつ
-        epsilon = opt.final_epsilon + (max(opt.num_decay_epochs - epoch, 0) * (
-                opt.initial_epsilon - opt.final_epsilon) / opt.num_decay_epochs)
+        #epsilon = opt.final_epsilon + (max(opt.num_decay_epochs - epoch, 0) * (  #num_decay_epochs以降一定
+        #        opt.initial_epsilon - opt.final_epsilon) / opt.num_decay_epochs)
+        epsilon = opt.initial_epsilon - opt.initial_epsilon*epoch/opt.num_epochs  #直線
         u = random() # 0～1
         random_action = u <= epsilon  # True, False
 
@@ -85,7 +89,7 @@ def train(opt):
         next_state = next_states[index, :]  #ある行動を選択したときの次の状態 #tensor([ , , , ])
         action = next_actions[index]  #行動 #(左から何番目か,何回転か)
 
-        reward, done = env.step(action, epoch, render=True) #行動を実行、報酬(スコア)を求める、溢れた場合done=True、描画
+        reward, done = env.step(action, epoch, render=False) #行動を実行、報酬(スコア)を求める、溢れた場合done=True、描画
 
         if torch.cuda.is_available():
             next_state = next_state.cuda()
@@ -95,18 +99,22 @@ def train(opt):
             final_score = env.score
             final_tetrominoes = env.tetrominoes
             final_cleared_lines = env.cleared_lines
+            cleared_lines1 = env.cleared_lines1
+            cleared_lines2 = env.cleared_lines2
+            cleared_lines3 = env.cleared_lines3
+            cleared_lines4 = env.cleared_lines4
             state = env.reset()  # 初期状態　tensor([0., 0., 0., 0.])
             if torch.cuda.is_available():
                 state = state.cuda()
         else:  # 溢れてない場合
             state = next_state  # 状態を更新  tensor([0., 1., 2., 5.])とか
             continue  #while epoch～に戻る
-        if len(replay_memory) < opt.replay_memory_size / 1000:  #溢れた場合判定(累計ピースが3000以下ならcontinue)
-            continue
-        
+        #if len(replay_memory) < opt.replay_memory_size / 1000:  #溢れた場合判定(累計ピースが3000以下ならcontinue)
+            #continue  #pass
         # 累計ピースが3000に到達した後、溢れる毎に以下を実行
         epoch += 1
         batch = sample(replay_memory, min(len(replay_memory), opt.batch_size)) #replay_memoryからbatch_size個ランダムに取り出す(len(replay_memory) < opt.batch_sizeのときはlen(replay_memory)個取り出す)
+        replay_memory.clear() #中身を全消去
         
         state_batch, reward_batch, next_state_batch, done_batch = zip(*batch)
         state_batch = torch.stack(tuple(state for state in state_batch))  #tensor([[0., 26., 16., 62.],*batch_size個])
@@ -130,6 +138,18 @@ def train(opt):
 
         optimizer.zero_grad()  #最適化アルゴリズム
         loss = criterion(q_values, y_batch)  #損失関数はmse、q_values:予測値、y_batch:正解値
+        """
+        length = len(q_values)
+        errors = np.zeros([length])
+        print('size', len(q_values), len(y_batch))
+        for i in range(length):
+            print('Q', q_values[i])
+            print('Y', y_batch[i])
+            errors[i] = (q_values[i] - y_batch[i]) ** 2
+        error = np.mean(errors)
+        print('error', error)
+        print('loss',loss)
+        """
         loss.backward()
         optimizer.step()
 
@@ -141,18 +161,50 @@ def train(opt):
                 final_score,
                 final_tetrominoes,
                 final_cleared_lines))
+        #学習中のスコアをcsvに記録
+        if epoch == 1:
+            with open('Score_train.csv', mode='w', newline="") as Score_train_Record:
+                writer = csv.writer(Score_train_Record)
+                writer.writerow([epoch,final_tetrominoes,final_score,final_cleared_lines, cleared_lines1,cleared_lines2,cleared_lines3,cleared_lines4])
+        else:
+            with open('Score_train.csv', mode='a', newline="") as Score_train_Record:
+                writer = csv.writer(Score_train_Record)
+                writer.writerow([epoch,final_tetrominoes,final_score,final_cleared_lines, cleared_lines1,cleared_lines2,cleared_lines3,cleared_lines4])
+        """
         writer.add_scalar('Train/Score', final_score, epoch - 1)
         writer.add_scalar('Train/Tetrominoes', final_tetrominoes, epoch - 1)
         writer.add_scalar('Train/Cleared lines', final_cleared_lines, epoch - 1)
+        """
 
         if epoch > 0 and epoch % opt.save_interval == 0:
-            torch.save(model, "{}/tetris_{}".format(opt.saved_path, epoch))
+            torch.save(model, "{}/tetris2_{}".format(opt.saved_path, epoch))  #定期的にモデルをtrained_modelsに保存
 
-    torch.save(model, "{}/tetris".format(opt.saved_path))
+        if final_tetrominoes > 500:  #ミノ数が500を超えたモデルの重みとバイアスをcsvに保存
+            save_model_parameter(model)
+
+    torch.save(model, "{}/tetris2".format(opt.saved_path))  #学習後のモデルをtrained_modelsに保存
+
+# 重みとバイアスをcsvに保存
+def save_model_parameter(saved_model):
+    with open('trained_model_parameters.csv', 'w', newline="") as f:
+        csv_writer = csv.writer(f)
+        for key, value in saved_model.state_dict().items():
+            csv_writer.writerow([key])
+            tensor = value.to(torch.device('cpu'))
+            for i in range(len(tensor)):
+                if 'bias' in key:
+                    csv_writer.writerow([tensor.numpy()[i]])
+                else:
+                    for j in range(len(tensor[i])):
+                        csv_writer.writerow([tensor[i][j].numpy()])
+    print('model parameter is saved!!!!')
 
 # python train.pyで実行した場合__name__は"__main__"という文字列になる
 # (import trainした場合__name__は"train"という文字列になる)
 if __name__ == "__main__":
     opt = get_args()
+    opt.num_decay_epochs = opt.num_epochs * 2/3
+    print(opt.num_decay_epochs)
+    print(opt.num_epochs)
     #print(opt.width)  # 10
     train(opt)
